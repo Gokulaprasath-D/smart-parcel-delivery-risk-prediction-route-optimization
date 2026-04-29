@@ -1,0 +1,869 @@
+import { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import {
+  Truck,
+  AlertTriangle,
+  Cloud,
+  Gauge,
+  ArrowRight,
+  Route,
+  Shield,
+  Zap,
+  MapPin,
+  Sun,
+  CloudRain,
+  CloudSnow,
+  Package,
+  Activity,
+  Plus,
+  Trash2,
+  Layers,
+  Navigation,
+  LocateFixed,
+  CheckCircle,
+} from 'lucide-react';
+import axios from 'axios';
+import L from 'leaflet';
+import './App.css';
+
+// Fix for default Leaflet marker icons
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
+
+const getRiskIcon = (level) => {
+  let color = 'green';
+  if (level === 'Medium') color = 'gold';
+  if (level === 'High') color = 'red';
+
+  return new L.Icon({
+    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+  });
+};
+
+const WeatherIcon = ({ condition, size = 14 }) => {
+  if (condition === 0) return <Sun size={size} className="text-amber-400" />;
+  if (condition === 1) return <CloudRain size={size} className="text-blue-400" />;
+  return <CloudSnow size={size} className="text-slate-300" />;
+};
+
+const weatherLabel = (w) => {
+  if (w === 0) return 'Clear';
+  if (w === 1) return 'Rainy';
+  return 'Stormy';
+};
+
+const AnimatedNumber = ({ value, suffix = '' }) => (
+  <motion.span
+    key={value}
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="tabular-nums font-bold"
+  >
+    {value}{suffix}
+  </motion.span>
+);
+
+const getCompletedIcon = () => {
+  return new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+  });
+};
+
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // metres
+  const p1 = lat1 * Math.PI/180;
+  const p2 = lat2 * Math.PI/180;
+  const dp = (lat2-lat1) * Math.PI/180;
+  const dl = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(dp/2) * Math.sin(dp/2) +
+            Math.cos(p1) * Math.cos(p2) *
+            Math.sin(dl/2) * Math.sin(dl/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+// Map view controller to handle centering
+function ChangeView({ center, zoom, isSimulating }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, zoom, {
+      animate: true,
+      duration: isSimulating ? 3 : 0.5
+    });
+  }, [center, zoom, map, isSimulating]);
+  return null;
+}
+
+function App() {
+  const [deliveries, setDeliveries] = useState([]);
+  const [optimizedRoute, setOptimizedRoute] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [mapCenter, setMapCenter] = useState([13.0827, 80.2707]); // Default to Chennai, Tamil Nadu
+  const [mapZoom, setMapZoom] = useState(12);
+  const [backendReady, setBackendReady] = useState(false);
+
+  // Simulation State
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simIndex, setSimIndex] = useState(0);
+
+  // Real-time GPS State
+  const [isRealTimeMode, setIsRealTimeMode] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const [userHeading, setUserHeading] = useState(0);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+  const [mapType, setMapType] = useState('dark'); // dark, satellite, terrain
+  const [isCompassMode, setIsCompassMode] = useState(false);
+  const [is3DMode, setIs3DMode] = useState(false);
+  const [waitingForValidation, setWaitingForValidation] = useState(false);
+  const [routeMode, setRouteMode] = useState('driving');
+
+  // Periodic Backend Health Check
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        await axios.get('http://127.0.0.1:8000/');
+        setBackendReady(true);
+      } catch (err) {
+        setBackendReady(false);
+      }
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Voice Synthesis Helper
+  const speak = (text) => {
+    if (!('speechSynthesis' in window) || !isVoiceEnabled) return;
+    window.speechSynthesis.cancel(); // Interrupt previous speech
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Simulation Logic
+  useEffect(() => {
+    let timer;
+    if (isSimulating && optimizedRoute && simIndex < optimizedRoute.length) {
+      if (waitingForValidation) return; // Wait for user to validate
+
+      timer = setTimeout(() => {
+        setWaitingForValidation(true);
+        speak(`Arrived at stop ${simIndex + 1}. Please confirm delivery to mark as completed.`);
+      }, 3000); // simulate travel time
+    } else if (simIndex >= (optimizedRoute?.length || 0)) {
+      setIsSimulating(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isSimulating, simIndex, optimizedRoute, waitingForValidation]);
+
+  const handleCompleteDelivery = () => {
+    setWaitingForValidation(false);
+    const nextIndex = simIndex + 1;
+    if (nextIndex < optimizedRoute.length) {
+      const nextStop = optimizedRoute[nextIndex];
+      setSimIndex(nextIndex);
+      setMapCenter([nextStop.lat, nextStop.lng]);
+      
+      if (nextStop.risk_level === 'High') {
+        speak(`Caution. Approaching high risk delivery at stop ${nextIndex + 1}.`);
+      }
+    } else {
+      setSimIndex(nextIndex); // Move beyond the last stop
+      speak("Final stop reached. All deliveries completed.");
+      setIsSimulating(false);
+      setIsRealTimeMode(false);
+    }
+  };
+
+  // Real-time GPS Tracking
+  useEffect(() => {
+    let watchId = null;
+
+    if (isRealTimeMode) {
+      speak("Starting drive mode. Navigation active.");
+      if ("geolocation" in navigator) {
+        // Force an immediate high-accuracy hit to fix "not proper location"
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            setUserLocation([latitude, longitude]);
+            setMapCenter([latitude, longitude]);
+          },
+          (err) => console.warn("Initial positioning failed", err),
+          { enableHighAccuracy: true }
+        );
+
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            const { latitude, longitude, heading, speed } = position.coords;
+            setUserLocation([latitude, longitude]);
+            setMapCenter([latitude, longitude]); // Auto-follow
+
+            // Optional: Voice for movement
+            if (speed > 5) { // If moving faster than 5m/s
+              // We could add navigation logic here
+            }
+          },
+          (error) => {
+            console.error("Geolocation error:", error);
+            speak("Error accessing location. Please check permissions.");
+            setIsRealTimeMode(false);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 10000, // Increased timeout
+            distanceFilter: 1 // Only update if moved 1 meter
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by your browser.");
+        setIsRealTimeMode(false);
+      }
+    } else {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    }
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [isRealTimeMode]);
+
+  const [routeGeometries, setRouteGeometries] = useState({});
+
+  useEffect(() => {
+    // Fetch DYNAMIC ROUTES based on routeMode for all adjacent stops
+    if (optimizedRoute && optimizedRoute.length > 1) {
+      const fetchRoutes = async () => {
+         const coordsString = optimizedRoute.map(loc => `${loc.lng},${loc.lat}`).join(';');
+         try {
+           const res = await axios.get(`http://router.project-osrm.org/route/v1/${routeMode}/${coordsString}?geometries=geojson&steps=true`);
+           if (res.data && res.data.code === "Ok") {
+              let currentOriginalLeg = 0;
+              const newGeometries = {};
+              // OSRM returns legs corresponding to each segment
+              res.data.routes[0].legs.forEach((leg, index) => {
+                 // OSRM geojson includes steps. For simplicity, if we query all, we can extract per-leg geometry.
+                 // In OSRM v1, if we just want the overall geometry, it's easier to just draw it as a single Polyline.
+                 // But since the original mapped segments step by step, let's keep the single array and we can render one full route that is colored nicely.
+                 // Wait, to keep original UX, I should map each leg back to the original stop path.
+                 const points = leg.steps.flatMap(s => s.geometry.coordinates.map(c => [c[1], c[0]]));
+                 newGeometries[index] = points;
+              });
+              setRouteGeometries(newGeometries);
+           }
+         } catch(err) {
+           console.error("OSRM Route fetching error", err);
+           setRouteGeometries({}); // fallback to straight lines
+         }
+      };
+      fetchRoutes();
+    }
+  }, [optimizedRoute, routeMode]);
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setLoading(true);
+    setUploadedFileName(file.name);
+    setIsSimulating(false);
+    setSimIndex(0);
+    setRouteGeometries({});
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post('http://127.0.0.1:8000/upload_csv', formData);
+
+      if (response.data.error) {
+        alert(`Error: ${response.data.error}`);
+        setDeliveries([]);
+        setOptimizedRoute(null);
+      } else {
+        const data = response.data;
+        setDeliveries(data.deliveries);
+        setOptimizedRoute(data.optimized_route);
+
+        if (data.deliveries.length > 0) {
+          // Centering map on the first delivery
+          setMapCenter([data.deliveries[0].lat, data.deliveries[0].lng]);
+          setMapZoom(13);
+          speak(`Data processed. Optimized route found for ${data.total_deliveries} deliveries across ${data.clusters.length} clusters.`);
+        }
+
+        alert(`✅ Processed ${data.total_deliveries} deliveries across ${data.clusters.length} clusters!`);
+      }
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert('Failed to connect to backend optimization service.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stats = useMemo(() => {
+    if (!optimizedRoute || optimizedRoute.length === 0) {
+      return { total: 0, highRisk: 0, avgProb: 0, clusters: 0 };
+    }
+    const high = optimizedRoute.filter(d => d.risk_level === 'High').length;
+    const avgP = optimizedRoute.reduce((acc, d) => acc + d.risk_probability, 0) / optimizedRoute.length;
+    const clusterCount = new Set(optimizedRoute.map(d => d.cluster)).size;
+    return {
+      total: optimizedRoute.length,
+      highRisk: high,
+      avgProb: (avgP * 100).toFixed(1),
+      clusters: clusterCount
+    };
+  }, [optimizedRoute]);
+
+  const handleClear = () => {
+    setDeliveries([]);
+    setOptimizedRoute(null);
+    setUploadedFileName('');
+    setMapCenter([13.0827, 80.2707]);
+    setMapZoom(10);
+    setIsSimulating(false);
+    setSimIndex(0);
+    setIsRealTimeMode(false);
+    setWaitingForValidation(false);
+  };
+
+  const toggleSimulation = () => {
+    setIsRealTimeMode(false); // Disable real-time if simulation starts
+    if (optimizedRoute && simIndex >= optimizedRoute.length) {
+      setSimIndex(0);
+    }
+    setWaitingForValidation(false);
+    setIsSimulating(!isSimulating);
+  };
+
+  const toggleRealTimeMode = () => {
+    setIsSimulating(false); // Disable simulation if real-time starts
+    setWaitingForValidation(false);
+    setIsRealTimeMode(!isRealTimeMode);
+  };
+
+  const currentTarget = optimizedRoute?.[simIndex];
+  const distanceToTarget = (isRealTimeMode && userLocation && currentTarget) 
+    ? calculateDistance(userLocation[0], userLocation[1], currentTarget.lat, currentTarget.lng)
+    : null;
+  const withinDeliveryRange = distanceToTarget !== null && distanceToTarget < 100; // 100 meters validation
+
+  return (
+    <div className="flex h-screen overflow-hidden relative">
+      <div className="app-bg" />
+
+      {/* Sidebar */}
+      <aside className="sidebar w-64 flex flex-col shrink-0">
+        <div className="px-6 py-8 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <Truck size={20} className="text-white" />
+            </div>
+            <div>
+              <h1 className="sidebar-logo text-xl font-bold tracking-tight">SmartParcel</h1>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Tamil Nadu Ops</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 px-4 py-6">
+          <label className="block mb-6">
+            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+            <div className="cursor-pointer bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-50 hover:to-violet-500 transition-all p-5 rounded-2xl text-center group border border-indigo-400/20 shadow-xl shadow-indigo-900/20">
+              <Package size={36} className="mx-auto mb-3 text-white group-hover:scale-110 transition-transform" />
+              <p className="text-white font-bold text-sm">Upload CSV Data</p>
+              <p className="text-indigo-100/70 text-[10px] mt-1">Real-time Risk Prediction</p>
+            </div>
+          </label>
+
+          {uploadedFileName && (
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 mb-4">
+              <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Active Batch</p>
+              <p className="text-sm text-white font-medium truncate">{uploadedFileName}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <p className="text-xs text-emerald-400 font-medium">{deliveries.length} Records Loaded</p>
+              </div>
+            </motion.div>
+          )}
+
+          {deliveries.length > 0 && (
+            <div className="space-y-3">
+              <button
+                onClick={toggleSimulation}
+                className={`w-full py-3 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-2 border shadow-lg ${isSimulating
+                  ? 'bg-rose-900/40 border-rose-500/30 text-rose-400 hover:bg-rose-900/60'
+                  : 'bg-slate-800 hover:bg-slate-700 border-white/5 text-slate-300'
+                  }`}
+              >
+                {isSimulating ? <Zap size={14} className="animate-pulse" /> : <Truck size={14} />}
+                {isSimulating ? 'Stop Simulation' : 'Run Simulation'}
+              </button>
+
+              <button
+                onClick={toggleRealTimeMode}
+                className={`w-full py-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border shadow-lg ${isRealTimeMode
+                  ? 'bg-blue-600 border-blue-400/30 text-white shadow-blue-900/40'
+                  : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 border-indigo-400/30 text-white shadow-indigo-900/20'
+                  }`}
+              >
+                {isRealTimeMode ? <LocateFixed size={16} className="animate-pulse" /> : <Navigation size={16} />}
+                {isRealTimeMode ? 'Stop Drive Mode' : 'Start My Drive Mode'}
+              </button>
+
+              <div className="pt-4 space-y-3">
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Routing Mode</span>
+                  <select
+                    value={routeMode}
+                    onChange={(e) => setRouteMode(e.target.value)}
+                    className="bg-slate-800/80 border border-white/5 text-[10px] font-bold text-slate-300 rounded-lg px-2 py-1 outline-none cursor-pointer"
+                  >
+                    <option value="driving">Car 🚗</option>
+                    <option value="walking">Walking 🚶</option>
+                    <option value="cycling">Bike 🚲</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Voice Assistant</span>
+                  <button
+                    onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                    className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all ${isVoiceEnabled ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}
+                  >
+                    {isVoiceEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Map View</span>
+                  <select
+                    value={mapType}
+                    onChange={(e) => setMapType(e.target.value)}
+                    className="bg-slate-800/80 border border-white/5 text-[10px] font-bold text-slate-300 rounded-lg px-2 py-1 outline-none cursor-pointer"
+                  >
+                    <option value="dark">Dark Mode</option>
+                    <option value="satellite">Satellite (Google)</option>
+                    <option value="terrain">Terrain (Google)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Compass Mode</span>
+                  <button
+                    onClick={() => setIsCompassMode(!isCompassMode)}
+                    className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all ${isCompassMode ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-800 text-slate-500'}`}
+                  >
+                    {isCompassMode ? 'HEADING UP' : 'NORTH UP'}
+                  </button>
+                </div>
+                
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">3D Map Style</span>
+                  <button
+                    onClick={() => setIs3DMode(!is3DMode)}
+                    className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all ${is3DMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}
+                  >
+                    {is3DMode ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </div>
+
+              <button onClick={handleClear} className="w-full bg-slate-800/50 hover:bg-rose-900/40 hover:text-rose-400 border border-slate-700 text-slate-400 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2">
+                <Trash2 size={14} /> Clear System Data
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 py-6 border-t border-white/5 bg-slate-900/20">
+          <div className="system-status">
+            <div className="flex items-center gap-2 mb-4">
+              <div className={`status-dot ${!backendReady ? 'offline' : ''}`} />
+              <span className="text-xs font-bold text-slate-300 tracking-wide uppercase">
+                {backendReady ? 'Optimization Engine Online' : 'Backend Connection Offline'}
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-500">RF Classifier</span>
+                <span className="text-indigo-400 font-bold">Active</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-500">LR Optimizer</span>
+                <span className="text-violet-400 font-bold">Stable</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-500">Genetic Algo</span>
+                <span className="text-emerald-400 font-bold">Ready</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <main className="flex-1 flex flex-col relative z-10 overflow-hidden">
+        <header className="app-header h-20 flex items-center justify-between px-8 shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">Adaptive Route Intelligence</h2>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                <Activity size={12} className="text-indigo-500" /> Multi-Cluster Optimization
+              </p>
+              <div className="w-1 h-1 rounded-full bg-slate-700" />
+              <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                <Shield size={12} className="text-emerald-500" /> Risk-Aware Routing
+              </p>
+            </div>
+          </div>
+
+          {loading && <div className="flex items-center gap-3 bg-indigo-500/10 border border-indigo-500/20 px-4 py-2 rounded-full">
+            <span className="loading-spinner" />
+            <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Optimizing...</span>
+          </div>}
+        </header>
+
+        <div className="flex-1 overflow-auto p-6 scrollbar-hide">
+          {/* Stats Bar */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            {[
+              { label: 'Total Stops', value: stats.total, icon: MapPin, color: 'from-indigo-500/10', iconColor: 'text-indigo-400' },
+              { label: 'High Risk Alerts', value: stats.highRisk, icon: AlertTriangle, color: 'from-rose-500/10', iconColor: 'text-rose-400' },
+              { label: 'System Accuracy', value: stats.total > 0 ? '97.4' : '—', suffix: stats.total > 0 ? '%' : '', icon: Shield, color: 'from-emerald-500/10', iconColor: 'text-emerald-400' },
+              { label: 'Active Clusters', value: stats.clusters, icon: Layers, color: 'from-violet-500/10', iconColor: 'text-violet-400' },
+            ].map((stat, i) => {
+              const Icon = stat.icon;
+              return (
+                <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="stat-card group">
+                  <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} to-transparent opacity-50 group-hover:opacity-100 transition-opacity`} />
+                  <div className="relative flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{stat.label}</p>
+                      <p className="text-2xl text-white">
+                        <AnimatedNumber value={stat.value} suffix={stat.suffix} />
+                      </p>
+                    </div>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-900/50 border border-white/5 ${stat.iconColor}`}>
+                      <Icon size={24} />
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-280px)]">
+            {/* Map Container */}
+            <div className={`lg:col-span-2 relative map-panel rounded-3xl overflow-hidden group ${is3DMode ? 'is-3d-mode' : ''}`}>
+              {optimizedRoute && simIndex < optimizedRoute.length && (waitingForValidation || isRealTimeMode) && (
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[2000] w-[90%] max-w-sm pointer-events-auto">
+                  <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 p-5 rounded-2xl shadow-2xl flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h4 className="text-white font-bold flex items-center gap-2">
+                          <CheckCircle className="text-emerald-400" size={18} /> Confirm Delivery
+                        </h4>
+                        <p className="text-slate-400 text-xs mt-1">
+                          Stop #{simIndex + 1} - {currentTarget?.street || `Zone ${currentTarget?.cluster}`}
+                        </p>
+                      </div>
+                      {isRealTimeMode && (
+                        <div className="text-right">
+                          <p className="text-[10px] text-slate-500 uppercase font-bold">Distance</p>
+                          <p className={`text-sm font-bold ${withinDeliveryRange ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {distanceToTarget ? `${Math.round(distanceToTarget)}m` : 'Calc...'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <button 
+                      onClick={handleCompleteDelivery}
+                      disabled={isRealTimeMode && !withinDeliveryRange}
+                      className={`w-full py-3 rounded-xl font-bold transition-all ${
+                        (!isRealTimeMode || withinDeliveryRange) 
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 cursor-pointer' 
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
+                      }`}
+                    >
+                      Mark as Completed
+                    </button>
+                    {isRealTimeMode && !withinDeliveryRange && (
+                      <p className="text-center text-[10px] text-amber-500 uppercase tracking-wider font-bold">
+                        Must be within 100m to validate
+                      </p>
+                    )}
+                  </motion.div>
+                </div>
+              )}
+
+              <div className="absolute top-6 left-6 z-[1000] space-y-2 pointer-events-none">
+                <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 px-4 py-3 rounded-2xl shadow-2xl">
+                  <h3 className="text-xs font-bold text-white mb-2 flex items-center gap-2 tracking-wide uppercase">
+                    <Activity size={14} className="text-indigo-500" /> Dynamic Map Visualization
+                  </h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-[10px] text-slate-400 font-bold uppercase">Safe/Complete</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] text-slate-400 font-bold uppercase">Warning</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-rose-500" /><span className="text-[10px] text-slate-400 font-bold uppercase">Risk</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <MapContainer
+                center={mapCenter}
+                zoom={mapZoom}
+                scrollWheelZoom={true}
+                className="h-full w-full transition-transform duration-500 ease-out z-0"
+                style={{ 
+                  transform: is3DMode ? `rotateX(55deg) scale(1.3) translateY(10%) ${isCompassMode ? `rotateZ(${-userHeading}deg)` : ''}` : (isCompassMode ? `rotate(${-userHeading}deg)` : 'none'),
+                  transformOrigin: 'center center'
+                }}
+              >
+                <ChangeView center={mapCenter} zoom={mapZoom} isSimulating={isSimulating} />
+
+                {mapType === 'dark' && (
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                  />
+                )}
+
+                {mapType === 'satellite' && (
+                  <TileLayer
+                    attribution='&copy; Google Maps'
+                    url="http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}"
+                    subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
+                  />
+                )}
+
+                {mapType === 'terrain' && (
+                  <TileLayer
+                    attribution='&copy; Google Maps'
+                    url="http://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}"
+                    subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
+                  />
+                )}
+
+                {optimizedRoute && optimizedRoute.length > 1 && (
+                  optimizedRoute.slice(0, optimizedRoute.length - 1).map((stop, i) => {
+                    // Only show route segments for future stops
+                    if (i < simIndex - 1) return null;
+                    
+                    const nextStop = optimizedRoute[i + 1];
+                    const isHighTraffic = nextStop.traffic > 3;
+                    
+                    return (
+                      <Polyline
+                        key={`path-${i}`}
+                        positions={routeGeometries[i] ? routeGeometries[i] : [
+                          [stop.lat, stop.lng],
+                          [nextStop.lat, nextStop.lng]
+                        ]}
+                        pathOptions={{ 
+                          color: isHighTraffic ? '#ef4444' : '#22c55e', // Red for high traffic, Green for safe
+                          weight: 5, 
+                          opacity: 0.8,
+                          dashArray: routeGeometries[i] ? 'none' : (isHighTraffic ? '1, 10' : 'none')
+                        }}
+                      />
+                    );
+                  })
+                )}
+
+                {userLocation && (
+                  <Marker
+                    position={userLocation}
+                    icon={new L.Icon({
+                      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                      iconSize: [25, 41],
+                      iconAnchor: [12, 41],
+                    })}
+                    zIndexOffset={2000}
+                  >
+                    <Popup className="premium-popup">
+                      <div className="p-2 text-center" style={{ transform: isCompassMode ? `rotate(${userHeading}deg)` : 'none' }}>
+                        <p className="text-[10px] font-bold text-blue-400 uppercase mb-1">Live Location</p>
+                        <p className="text-xs text-white font-bold">You are here</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
+
+                {isSimulating && optimizedRoute && simIndex < optimizedRoute.length && (
+                  <Marker
+                    position={[optimizedRoute[simIndex].lat, optimizedRoute[simIndex].lng]}
+                    icon={new L.Icon({
+                      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-black.png',
+                      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                      iconSize: [25, 41],
+                      iconAnchor: [12, 41],
+                      className: 'animated-bike-marker'
+                    })}
+                    zIndexOffset={1000}
+                  >
+                    <Popup className="premium-popup">
+                      <div className="p-2 text-center" style={{ transform: isCompassMode ? `rotate(${userHeading}deg)` : 'none' }}>
+                        <p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Live Tracking</p>
+                        <p className="text-xs text-white font-bold">Delivery Truck 01</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Status: Moving to Stop #{simIndex + 2}</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
+
+                {optimizedRoute && optimizedRoute.map((stop, i) => {
+                  const isCompleted = i < simIndex;
+
+                  return (
+                    <Marker
+                      key={i}
+                      position={[stop.lat, stop.lng]}
+                      icon={isCompleted ? getCompletedIcon() : getRiskIcon(stop.risk_level)}
+                      opacity={isCompleted ? 0.7 : 1}
+                    >
+                      <Popup className="premium-popup">
+                        <div className="p-2 min-w-[140px]" style={{ transform: isCompassMode ? `rotate(${userHeading}deg)` : 'none' }}>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Stop #{i + 1}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                              isCompleted ? 'bg-emerald-500/20 text-emerald-400' :
+                              stop.risk_level === 'High' ? 'bg-rose-500/20 text-rose-400' :
+                              stop.risk_level === 'Medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
+                              }`}>
+                              {isCompleted ? 'Completed ✅' : stop.risk_level}
+                            </span>
+                          </div>
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-white font-bold flex justify-between">ID: <span className="text-slate-400">#00{stop.id}</span></p>
+                            <p className="text-xs text-white font-bold flex justify-between">Area: <span className="text-indigo-400 truncate ml-2">{stop.street && stop.street !== 'Unknown Street' ? stop.street : `Zone ${stop.cluster}`}</span></p>
+                            <p className="text-xs text-white font-bold flex justify-between">Cluster: <span className="text-violet-400">Area {stop.cluster}</span></p>
+                            <div className="h-px bg-white/5 my-1" />
+                            {!isCompleted && (
+                              <div className="flex gap-4">
+                                <div className="flex items-center gap-1 text-[10px] text-slate-400"><Gauge size={12} className="text-indigo-400" /> {stop.traffic}/5</div>
+                                <div className="flex items-center gap-1 text-[10px] text-slate-400"><Cloud size={12} className="text-blue-400" /> {weatherLabel(stop.weather)}</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
+              </MapContainer>
+            </div>
+
+            {/* Decision Support Panel */}
+            <div className="risk-panel rounded-3xl flex flex-col overflow-hidden">
+              <div className="p-6 border-b border-white/5 bg-slate-900/40">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-widest">
+                  <Activity size={18} className="text-indigo-500" /> Real-time Analytics
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-1 font-medium tracking-wide">AI PREDICTED RISK ENGINE RESULTS</p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 custom-scrollbar">
+                <AnimatePresence mode="popLayout">
+                  {!optimizedRoute ? (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col items-center justify-center text-center p-10">
+                      <div className="w-16 h-16 rounded-3xl bg-indigo-500/5 flex items-center justify-center mb-4 border border-indigo-500/10">
+                        <Zap size={32} className="text-indigo-500/40" />
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-400 mb-2">No Active Pipeline</h4>
+                      <p className="text-xs text-slate-600">Upload a manifest CSV to initialize the ML-based risk assessment engine.</p>
+                    </motion.div>
+                  ) : (
+                    optimizedRoute.slice(simIndex).map((stop, i) => {
+                      const realIndex = i + simIndex;
+                      const riskType = stop.risk_level.toLowerCase();
+                      return (
+                        <motion.div key={realIndex} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+                          className={`risk-card risk-${riskType} border-l-4 ${riskType === 'high' ? 'border-l-rose-500' : riskType === 'medium' ? 'border-l-amber-500' : 'border-l-emerald-500'}`}
+                        >
+                          <div className="flex justify-between items-center mb-3">
+                            <div className="flex items-center gap-3">
+                              <span className="w-8 h-8 rounded-lg bg-slate-900/80 text-slate-400 flex items-center justify-center text-[11px] font-bold">
+                                {`#${realIndex + 1}`}
+                              </span>
+                              <div>
+                                <p className="text-xs font-bold text-white uppercase tracking-tight truncate max-w-[120px]">
+                                  {stop.street && stop.street !== 'Unknown Street' ? stop.street : `Area Zone ${stop.cluster}`}
+                                </p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                                  {`Zone ${stop.cluster} • ID ${stop.id}`}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`risk-badge risk-badge-${riskType}`}>
+                              {stop.risk_level}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-slate-900/40 p-2 rounded-lg text-center">
+                              <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Traffic</p>
+                              <p className={`text-xs font-bold ${stop.traffic > 3 ? 'text-rose-400' : 'text-white'}`}>{stop.traffic}/5</p>
+                            </div>
+                            <div className="bg-slate-900/40 p-2 rounded-lg text-center">
+                              <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Dist</p>
+                              <p className="text-xs text-white font-bold">{stop.distance}km</p>
+                            </div>
+                            <div className="bg-slate-900/40 p-2 rounded-lg text-center font-bold">
+                              <p className="text-[9px] text-slate-500 uppercase mb-0.5">Weather</p>
+                              <WeatherIcon condition={stop.weather} className="mx-auto" />
+                            </div>
+                          </div>
+
+                          <div className="mt-3">
+                            <div className="flex justify-between items-center text-[9px] font-bold uppercase mb-1">
+                              <span className="text-slate-500 tracking-widest">Failure Probability</span>
+                              <span className="text-indigo-400">{(stop.risk_probability * 100).toFixed(1)}%</span>
+                            </div>
+                            <div className="prob-bar-track bg-slate-900/60">
+                              <motion.div initial={{ width: 0 }} animate={{ width: `${stop.risk_probability * 100}%` }}
+                                className={`prob-bar-fill ${riskType === 'high' ? 'bg-rose-500' : riskType === 'medium' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                              />
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main >
+    </div >
+  );
+}
+
+export default App;

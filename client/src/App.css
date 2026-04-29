@@ -1,0 +1,297 @@
+/* ===== ROOT & LAYOUT ===== */
+#root {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: #f8fafc;
+}
+
+/* ===== ANIMATED BACKGROUND ===== */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 90%, rgba(236, 72, 153, 0.12) 0%, transparent 50%),
+    #f8fafc;
+  overflow: hidden;
+}
+
+.app-bg::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background:
+    radial-gradient(circle 600px at 30% 40%, rgba(99, 102, 241, 0.08), transparent),
+    radial-gradient(circle 400px at 70% 60%, rgba(139, 92, 246, 0.06), transparent);
+  animation: bg-drift 20s ease-in-out infinite alternate;
+}
+
+@keyframes bg-drift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(30px, -20px); }
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  position: relative;
+  z-index: 50;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.02);
+}
+
+.sidebar-logo {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ===== PRIMARY BUTTON ===== */
+.optimize-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white !important;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3), 0 0 0 0 rgba(99, 102, 241, 0);
+}
+
+/* ===== GLASS PANELS ===== */
+.map-panel, .risk-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* ===== RISK CARDS ===== */
+.risk-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.risk-card:hover {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+}
+
+.risk-card.risk-low { --risk-accent: #22c55e; }
+.risk-card.risk-medium { --risk-accent: #f59e0b; }
+.risk-card.risk-high { --risk-accent: #ef4444; }
+
+/* ===== RISK BADGES ===== */
+.risk-badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.risk-badge-low {
+  background: rgba(34, 197, 94, 0.15);
+  color: #166534;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.risk-badge-medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.risk-badge-high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* ===== STAT CARDS ===== */
+.stat-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  padding: 20px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+/* ===== SCROLLBAR ===== */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
+
+/* Force text and background colors specifically overwritten in App.jsx to look light */
+.text-white { color: #1e293b !important; }
+.text-slate-300, .text-slate-400 { color: #475569 !important; }
+.text-slate-500 { color: #64748b !important; }
+
+/* Keep specific colorful elements colorful */
+.bg-indigo-600 { background: #4f46e5 !important; color: white !important; }
+.bg-gradient-to-r { color: white !important; }
+.text-indigo-400 { color: #6366f1 !important; }
+.text-violet-400 { color: #8b5cf6 !important; }
+.text-blue-400 { color: #3b82f6 !important; }
+.text-emerald-400 { color: #10b981 !important; }
+
+/* Invert panel backgrounds explicitly */
+.bg-slate-900, .bg-slate-800 { background: #ffffff !important; border-color: #e2e8f0 !important; }
+.bg-slate-900\/40, .bg-slate-800\/40, .bg-slate-800\/50, .bg-slate-800\/60, .bg-slate-800\/80, .bg-slate-900\/20, .bg-slate-950 { background: rgba(248, 250, 252, 0.8) !important; border-color: #e2e8f0 !important; }
+.border-white\/5, .border-slate-700, .border-slate-700\/50 { border-color: #e2e8f0 !important; }
+
+/* Override overrides for buttons that MUST be dark/colorful */
+button.bg-slate-800 { background: #f1f5f9 !important; border-color: #cbd5e1 !important; }
+button.bg-slate-800:hover { background: #e2e8f0 !important; }
+
+/* Inputs */
+input.bg-slate-900 { background: #f8fafc !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; }
+select.bg-slate-800\/80 { background: #f8fafc !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; }
+
+/* Status panel */
+.system-status { background: rgba(255, 255, 255, 0.9) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+/* Modals */
+.bg-black\/60 { background: rgba(255, 255, 255, 0.6) !important; }
+
+/* ===== MAPBOX CUSTOMIZATION ===== */
+.navigation-arrow {
+  transition: transform 0.1s linear;
+  filter: drop-shadow(0 4px 12px rgba(59, 130, 246, 0.5));
+}
+
+.custom-marker {
+  position: relative;
+  background-position: center;
+  background-repeat: no-repeat;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.marker-label {
+  position: absolute;
+  bottom: 0px;
+  left: 50%;
+  transform: translate(-50%, 100%);
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(8px);
+  color: white !important;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mapboxgl-marker {
+  cursor: pointer;
+}
+
+.mapboxgl-ctrl-bottom-right, .mapboxgl-ctrl-bottom-left {
+  display: none !important;
+}
+
+/* ===== GUIDED DESTINATION MODE — single glowing marker ===== */
+@keyframes gdm-ring {
+  0%,100% { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #3b82f6, 0 0 22px 8px #3b82f688; }
+  50%      { box-shadow: 0 0 0 3px #fff, 0 0 0 11px #3b82f6, 0 0 38px 18px #3b82f655; }
+}
+
+/* ===== MOBILE RESPONSIVE FIXES ===================================== */
+
+/* iOS safe area — pushes content away from notch / home indicator */
+:root {
+  --safe-top:    env(safe-area-inset-top,    0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left,   0px);
+  --safe-right:  env(safe-area-inset-right,  0px);
+}
+
+/* Use dynamic viewport height to account for iOS address bar */
+#root {
+  height: 100dvh;
+  height: -webkit-fill-available; /* Safari < 15 fallback */
+}
+
+/* Fix leaflet map to fill dynamic viewport */
+.leaflet-container {
+  height: 100% !important;
+  width:  100% !important;
+  touch-action: pan-x pan-y; /* enable native touch scroll/zoom */
+}
+
+/* Map legend: hide on small screens to reduce clutter */
+@media (max-width: 767px) {
+  /* Top-left Dynamic Map Visualization legend — hide on mobile */
+  .map-legend-top { display: none !important; }
+
+  /* Confirm delivery HUD — push above iOS home indicator */
+  .delivery-confirm-hud {
+    bottom: calc(14px + var(--safe-bottom)) !important;
+  }
+
+  /* HybridNavOverlay — keep above home bar, full width on mobile */
+  .hno-panel {
+    right: 8px !important;
+    left:  8px !important;
+    width: calc(100vw - 16px) !important;
+    bottom: calc(14px + var(--safe-bottom)) !important;
+  }
+
+  /* Larger touch targets on mobile */
+  button {
+    min-height: 44px;
+  }
+
+  /* Sidebar scroll fix on mobile */
+  .sidebar {
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+  }
+}
+
+/* Hide map top-left info legend on mobile using Leaflet zIndex trick */
+@media (max-width: 767px) {
+  /* The absolute top-6 left-6 info panel inside map div */
+  .map-panel .absolute.top-6.left-6 {
+    display: none !important;
+  }
+}
+
+/* SARM route — works on all browsers including Safari/Chrome mobile */
+@keyframes sarm-march { to { stroke-dashoffset: -28; } }
+.sarm-route {
+  stroke-dasharray: 18 9;
+  animation: sarm-march 0.7s linear infinite;
+}
+@keyframes sarm-dest-ring {
+  0%,100% { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #3b82f6, 0 0 20px 8px #3b82f688; }
+  50%      { box-shadow: 0 0 0 3px #fff, 0 0 0 11px #3b82f6, 0 0 36px 16px #3b82f655; }
+}
+@keyframes sarm-dest-pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.10);} }
+.sarm-dest-icon {
+  animation: sarm-dest-ring 1.8s ease-in-out infinite, sarm-dest-pulse 1.8s ease-in-out infinite;
+}
+

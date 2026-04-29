@@ -1,0 +1,397 @@
+1: /* ===== ROOT & LAYOUT ===== */
+2: #root {
+3:   height: 100vh;
+4:   width: 100vw;
+5:   overflow: hidden;
+6: }
+7: 
+8: /* ===== ANIMATED BACKGROUND ===== */
+9: .app-bg {
+10:   position: fixed;
+11:   inset: 0;
+12:   z-index: 0;
+13:   background: radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+14:     radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+15:     radial-gradient(ellipse at 50% 90%, rgba(236, 72, 153, 0.05) 0%, transparent 50%),
+16:     #020617;
+17:   overflow: hidden;
+18: }
+19: 
+20: .app-bg::before {
+21:   content: '';
+22:   position: absolute;
+23:   top: -50%;
+24:   left: -50%;
+25:   width: 200%;
+26:   height: 200%;
+27:   background:
+28:     radial-gradient(circle 600px at 30% 40%, rgba(99, 102, 241, 0.04), transparent),
+29:     radial-gradient(circle 400px at 70% 60%, rgba(139, 92, 246, 0.03), transparent);
+30:   animation: bg-drift 20s ease-in-out infinite alternate;
+31: }
+32: 
+33: @keyframes bg-drift {
+34:   0% {
+35:     transform: translate(0, 0);
+36:   }
+37: 
+38:   100% {
+39:     transform: translate(30px, -20px);
+40:   }
+41: }
+42: 
+43: /* ===== SIDEBAR ===== */
+44: .sidebar {
+45:   background: rgba(15, 23, 42, 0.85);
+46:   backdrop-filter: blur(24px);
+47:   -webkit-backdrop-filter: blur(24px);
+48:   border-right: 1px solid rgba(255, 255, 255, 0.06);
+49:   position: relative;
+50:   z-index: 50;
+51: }
+52: 
+53: .sidebar-logo {
+54:   background: linear-gradient(135deg, #6366f1, #8b5cf6);
+55:   -webkit-background-clip: text;
+56:   -webkit-text-fill-color: transparent;
+57:   background-clip: text;
+58: }
+59: 
+60: .sidebar-nav-btn {
+61:   position: relative;
+62:   overflow: hidden;
+63:   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+64: }
+65: 
+66: .sidebar-nav-btn::before {
+67:   content: '';
+68:   position: absolute;
+69:   inset: 0;
+70:   background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+71:   opacity: 0;
+72:   transition: opacity 0.3s ease;
+73:   border-radius: inherit;
+74: }
+75: 
+76: .sidebar-nav-btn:hover::before,
+77: .sidebar-nav-btn.active::before {
+78:   opacity: 1;
+79: }
+80: 
+81: .sidebar-nav-btn.active {
+82:   border-left: 3px solid #6366f1;
+83:   box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+84: }
+85: 
+86: /* ===== HEADER ===== */
+87: .app-header {
+88:   background: rgba(15, 23, 42, 0.6);
+89:   backdrop-filter: blur(16px);
+90:   -webkit-backdrop-filter: blur(16px);
+91:   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+92: }
+93: 
+94: /* ===== PRIMARY BUTTON ===== */
+95: .optimize-btn {
+96:   background: linear-gradient(135deg, #6366f1, #8b5cf6);
+97:   position: relative;
+98:   overflow: hidden;
+99:   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+100:   box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3), 0 0 0 0 rgba(99, 102, 241, 0);
+101: }
+102: 
+103: .optimize-btn:hover {
+104:   box-shadow: 0 6px 25px rgba(99, 102, 241, 0.45), 0 0 0 2px rgba(99, 102, 241, 0.15);
+105:   transform: translateY(-1px);
+106: }
+107: 
+108: .optimize-btn:active {
+109:   transform: translateY(0) scale(0.98);
+110: }
+111: 
+112: .optimize-btn::before {
+113:   content: '';
+114:   position: absolute;
+115:   top: 0;
+116:   left: -100%;
+117:   width: 100%;
+118:   height: 100%;
+119:   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+120:   transition: left 0.6s ease;
+121: }
+122: 
+123: .optimize-btn:hover::before {
+124:   left: 100%;
+125: }
+126: 
+127: .optimize-btn:disabled {
+128:   opacity: 0.5;
+129:   pointer-events: none;
+130:   box-shadow: none;
+131: }
+132: 
+133: /* ===== GLASS PANELS ===== */
+134: .map-panel {
+135:   background: rgba(15, 23, 42, 0.5);
+136:   backdrop-filter: blur(12px);
+137:   -webkit-backdrop-filter: blur(12px);
+138:   border: 1px solid rgba(255, 255, 255, 0.07);
+139:   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+140:   overflow: hidden;
+141:   perspective: 1200px;
+142: }
+143: 
+144: .animated-bike-marker {
+145:   transition: transform 3s linear !important;
+146: }
+147: 
+148: 
+149: .risk-panel {
+150:   background: rgba(15, 23, 42, 0.5);
+151:   backdrop-filter: blur(12px);
+152:   -webkit-backdrop-filter: blur(12px);
+153:   border: 1px solid rgba(255, 255, 255, 0.07);
+154:   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+155: }
+156: 
+157: /* ===== RISK CARDS ===== */
+158: .risk-card {
+159:   background: rgba(30, 41, 59, 0.4);
+160:   border: 1px solid rgba(255, 255, 255, 0.05);
+161:   border-radius: 12px;
+162:   padding: 16px;
+163:   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+164:   position: relative;
+165:   overflow: hidden;
+166: }
+167: 
+168: .risk-card::after {
+169:   content: '';
+170:   position: absolute;
+171:   top: 0;
+172:   left: 0;
+173:   right: 0;
+174:   height: 2px;
+175:   background: linear-gradient(90deg, transparent, var(--risk-accent, #6366f1), transparent);
+176:   opacity: 0;
+177:   transition: opacity 0.3s ease;
+178: }
+179: 
+180: .risk-card:hover {
+181:   background: rgba(30, 41, 59, 0.65);
+182:   border-color: rgba(255, 255, 255, 0.1);
+183:   transform: translateY(-2px);
+184:   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+185: }
+186: 
+187: .risk-card:hover::after {
+188:   opacity: 1;
+189: }
+190: 
+191: .risk-card.risk-low {
+192:   --risk-accent: #22c55e;
+193: }
+194: 
+195: .risk-card.risk-medium {
+196:   --risk-accent: #f59e0b;
+197: }
+198: 
+199: .risk-card.risk-high {
+200:   --risk-accent: #ef4444;
+201: }
+202: 
+203: /* ===== RISK BADGES ===== */
+204: .risk-badge {
+205:   font-size: 11px;
+206:   font-weight: 600;
+207:   letter-spacing: 0.05em;
+208:   text-transform: uppercase;
+209:   padding: 4px 10px;
+210:   border-radius: 999px;
+211: }
+212: 
+213: .risk-badge-low {
+214:   background: rgba(34, 197, 94, 0.15);
+215:   color: #4ade80;
+216:   border: 1px solid rgba(34, 197, 94, 0.25);
+217: }
+218: 
+219: .risk-badge-medium {
+220:   background: rgba(245, 158, 11, 0.15);
+221:   color: #fbbf24;
+222:   border: 1px solid rgba(245, 158, 11, 0.25);
+223: }
+224: 
+225: .risk-badge-high {
+226:   background: rgba(239, 68, 68, 0.15);
+227:   color: #f87171;
+228:   border: 1px solid rgba(239, 68, 68, 0.25);
+229: }
+230: 
+231: /* ===== STAT CARDS ===== */
+232: .stat-card {
+233:   background: rgba(30, 41, 59, 0.35);
+234:   border: 1px solid rgba(255, 255, 255, 0.06);
+235:   border-radius: 16px;
+236:   padding: 20px;
+237:   transition: all 0.3s ease;
+238:   position: relative;
+239:   overflow: hidden;
+240: }
+241: 
+242: .stat-card::before {
+243:   content: '';
+244:   position: absolute;
+245:   top: 0;
+246:   left: 0;
+247:   width: 100%;
+248:   height: 100%;
+249:   background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), transparent 50%);
+250:   pointer-events: none;
+251: }
+252: 
+253: .stat-card:hover {
+254:   border-color: rgba(255, 255, 255, 0.1);
+255:   background: rgba(30, 41, 59, 0.5);
+256: }
+257: 
+258: .stat-icon {
+259:   width: 42px;
+260:   height: 42px;
+261:   border-radius: 12px;
+262:   display: flex;
+263:   align-items: center;
+264:   justify-content: center;
+265: }
+266: 
+267: /* ===== MAP LEGEND ===== */
+268: .map-legend {
+269:   background: rgba(2, 6, 23, 0.9);
+270:   backdrop-filter: blur(16px);
+271:   -webkit-backdrop-filter: blur(16px);
+272:   border: 1px solid rgba(255, 255, 255, 0.08);
+273:   border-radius: 12px;
+274:   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+275: }
+276: 
+277: /* ===== EMPTY STATE ===== */
+278: .empty-state {
+279:   display: flex;
+280:   flex-direction: column;
+281:   align-items: center;
+282:   justify-content: center;
+283:   gap: 12px;
+284:   padding: 40px 20px;
+285:   color: #94a3b8;
+286: }
+287: 
+288: .empty-state-icon {
+289:   width: 64px;
+290:   height: 64px;
+291:   border-radius: 20px;
+292:   background: rgba(99, 102, 241, 0.1);
+293:   border: 1px solid rgba(99, 102, 241, 0.2);
+294:   display: flex;
+295:   align-items: center;
+296:   justify-content: center;
+297:   color: #6366f1;
+298:   margin-bottom: 8px;
+299: }
+300: 
+301: /* ===== STATUS DOT (pulse animation) ===== */
+302: .status-dot {
+303:   width: 8px;
+304:   height: 8px;
+305:   border-radius: 50%;
+306:   background: #22c55e;
+307:   position: relative;
+308:   transition: all 0.3s ease;
+309: }
+310: 
+311: .status-dot.offline {
+312:   background: #ef4444;
+313: }
+314: 
+315: .status-dot::after {
+316:   content: '';
+317:   position: absolute;
+318:   inset: -3px;
+319:   border-radius: 50%;
+320:   background: rgba(34, 197, 94, 0.3);
+321:   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+322: }
+323: 
+324: .status-dot.offline::after {
+325:   background: rgba(239, 68, 68, 0.3);
+326: }
+327: 
+328: @keyframes pulse-ring {
+329: 
+330:   0%,
+331:   100% {
+332:     opacity: 1;
+333:     transform: scale(1);
+334:   }
+335: 
+336:   50% {
+337:     opacity: 0;
+338:     transform: scale(1.8);
+339:   }
+340: }
+341: 
+342: /* ===== LOADING SPINNER ===== */
+343: .loading-spinner {
+344:   width: 18px;
+345:   height: 18px;
+346:   border: 2px solid rgba(255, 255, 255, 0.3);
+347:   border-top-color: #fff;
+348:   border-radius: 50%;
+349:   animation: spin 0.6s linear infinite;
+350: }
+351: 
+352: @keyframes spin {
+353:   to {
+354:     transform: rotate(360deg);
+355:   }
+356: }
+357: 
+358: /* ===== SCROLLBAR ===== */
+359: .custom-scrollbar::-webkit-scrollbar {
+360:   width: 6px;
+361: }
+362: 
+363: .custom-scrollbar::-webkit-scrollbar-track {
+364:   background: transparent;
+365: }
+366: 
+367: .custom-scrollbar::-webkit-scrollbar-thumb {
+368:   background: rgba(255, 255, 255, 0.08);
+369:   border-radius: 3px;
+370: }
+371: 
+372: .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+373:   background: rgba(255, 255, 255, 0.15);
+374: }
+375: 
+376: /* ===== PROBABILITY BAR ===== */
+377: .prob-bar-track {
+378:   height: 4px;
+379:   background: rgba(255, 255, 255, 0.06);
+380:   border-radius: 2px;
+381:   overflow: hidden;
+382:   margin-top: 8px;
+383: }
+384: 
+385: .prob-bar-fill {
+386:   height: 100%;
+387:   border-radius: 2px;
+388:   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+389: }
+390: 
+391: /* ===== SYSTEM STATUS PANEL ===== */
+392: .system-status {
+393:   background: rgba(2, 6, 23, 0.5);
+394:   border: 1px solid rgba(255, 255, 255, 0.06);
+395:   border-radius: 12px;
+396:   padding: 14px;
+397: }

@@ -1,0 +1,20 @@
+delivery_id,customer_id,agent_id,scheduled_date,scheduled_time,outcome,contact_reached,failure_reason,agent_note
+KRD001,KARUR001,KAGT01,2026-04-10,09:30,success,true,,Delivered to customer directly at gate
+KRD002,KARUR002,KAGT02,2026-04-10,10:00,failed_not_home,false,not_home,Called twice - no answer. Neighbour said customer works night shift
+KRD003,KARUR002,KAGT01,2026-04-11,11:00,failed_not_home,true,not_home,Customer said call before coming - prefers evening
+KRD004,KARUR003,KAGT03,2026-04-11,09:00,success,true,,Smooth delivery on first attempt
+KRD005,KARUR004,KAGT02,2026-04-12,10:00,failed_not_home,false,not_home,Customer not home - neighbor said available after 1pm
+KRD006,KARUR005,KAGT01,2026-04-12,09:30,success,true,,Delivered at doorstep - customer was waiting
+KRD007,KARUR002,KAGT03,2026-04-13,14:00,failed_not_home,false,not_home,Third attempt - still not home during daytime
+KRD008,KARUR006,KAGT02,2026-04-13,09:00,failed_not_home,false,not_home,Customer works shift - available only after 6pm
+KRD009,KARUR007,KAGT01,2026-04-13,10:30,success,true,,Parcel delivered. Customer signed.
+KRD010,KARUR008,KAGT03,2026-04-14,13:00,success,true,,Afternoon delivery successful
+KRD011,KARUR009,KAGT02,2026-04-14,09:00,failed_contact,false,wrong_number,Phone number incorrect - could not reach customer
+KRD012,KARUR010,KAGT01,2026-04-14,10:00,failed_not_home,false,not_home,Gate locked - no response
+KRD013,KARUR006,KAGT03,2026-04-15,19:00,success,true,,Evening delivery worked - customer was home
+KRD014,KARUR011,KAGT02,2026-04-15,09:30,success,true,,Fast delivery - customer was at gate
+KRD015,KARUR009,KAGT01,2026-04-15,10:00,failed_contact,false,wrong_number,Same wrong number issue. Needs contact update.
+KRD016,KARUR012,KAGT03,2026-04-15,14:00,success,true,,Delivered on first attempt - afternoon as preferred
+KRD017,KARUR004,KAGT02,2026-04-16,13:30,success,true,,Afternoon slot worked. Customer confirmed preference.
+KRD018,KARUR010,KAGT01,2026-04-16,18:30,success,true,,Evening slot - customer was home
+KRD019,KARUR002,KAGT03,2026-04-16,18:00,success,true,,Evening delivery finally successful after 3 prior fails

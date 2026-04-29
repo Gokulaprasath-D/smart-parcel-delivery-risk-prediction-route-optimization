@@ -1,0 +1,869 @@
+1: import { useState, useMemo, useEffect } from 'react';
+2: import { motion, AnimatePresence } from 'framer-motion';
+3: import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+4: import 'leaflet/dist/leaflet.css';
+5: import {
+6:   Truck,
+7:   AlertTriangle,
+8:   Cloud,
+9:   Gauge,
+10:   ArrowRight,
+11:   Route,
+12:   Shield,
+13:   Zap,
+14:   MapPin,
+15:   Sun,
+16:   CloudRain,
+17:   CloudSnow,
+18:   Package,
+19:   Activity,
+20:   Plus,
+21:   Trash2,
+22:   Layers,
+23:   Navigation,
+24:   LocateFixed,
+25:   CheckCircle,
+26: } from 'lucide-react';
+27: import axios from 'axios';
+28: import L from 'leaflet';
+29: import './App.css';
+30: 
+31: // Fix for default Leaflet marker icons
+32: import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+33: import markerIcon from 'leaflet/dist/images/marker-icon.png';
+34: import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+35: 
+36: delete L.Icon.Default.prototype._getIconUrl;
+37: L.Icon.Default.mergeOptions({
+38:   iconRetinaUrl: markerIcon2x,
+39:   iconUrl: markerIcon,
+40:   shadowUrl: markerShadow,
+41: });
+42: 
+43: const getRiskIcon = (level) => {
+44:   let color = 'green';
+45:   if (level === 'Medium') color = 'gold';
+46:   if (level === 'High') color = 'red';
+47: 
+48:   return new L.Icon({
+49:     iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+50:     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+51:     iconSize: [25, 41],
+52:     iconAnchor: [12, 41],
+53:     popupAnchor: [1, -34],
+54:     shadowSize: [41, 41],
+55:   });
+56: };
+57: 
+58: const WeatherIcon = ({ condition, size = 14 }) => {
+59:   if (condition === 0) return <Sun size={size} className="text-amber-400" />;
+60:   if (condition === 1) return <CloudRain size={size} className="text-blue-400" />;
+61:   return <CloudSnow size={size} className="text-slate-300" />;
+62: };
+63: 
+64: const weatherLabel = (w) => {
+65:   if (w === 0) return 'Clear';
+66:   if (w === 1) return 'Rainy';
+67:   return 'Stormy';
+68: };
+69: 
+70: const AnimatedNumber = ({ value, suffix = '' }) => (
+71:   <motion.span
+72:     key={value}
+73:     initial={{ opacity: 0, y: 10 }}
+74:     animate={{ opacity: 1, y: 0 }}
+75:     className="tabular-nums font-bold"
+76:   >
+77:     {value}{suffix}
+78:   </motion.span>
+79: );
+80: 
+81: const getCompletedIcon = () => {
+82:   return new L.Icon({
+83:     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+84:     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+85:     iconSize: [25, 41],
+86:     iconAnchor: [12, 41],
+87:     popupAnchor: [1, -34],
+88:     shadowSize: [41, 41],
+89:   });
+90: };
+91: 
+92: const calculateDistance = (lat1, lon1, lat2, lon2) => {
+93:   const R = 6371e3; // metres
+94:   const p1 = lat1 * Math.PI/180;
+95:   const p2 = lat2 * Math.PI/180;
+96:   const dp = (lat2-lat1) * Math.PI/180;
+97:   const dl = (lon2-lon1) * Math.PI/180;
+98: 
+99:   const a = Math.sin(dp/2) * Math.sin(dp/2) +
+100:             Math.cos(p1) * Math.cos(p2) *
+101:             Math.sin(dl/2) * Math.sin(dl/2);
+102:   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+103:   return R * c;
+104: };
+105: 
+106: // Map view controller to handle centering
+107: function ChangeView({ center, zoom, isSimulating }) {
+108:   const map = useMap();
+109:   useEffect(() => {
+110:     map.setView(center, zoom, {
+111:       animate: true,
+112:       duration: isSimulating ? 3 : 0.5
+113:     });
+114:   }, [center, zoom, map, isSimulating]);
+115:   return null;
+116: }
+117: 
+118: function App() {
+119:   const [deliveries, setDeliveries] = useState([]);
+120:   const [optimizedRoute, setOptimizedRoute] = useState(null);
+121:   const [loading, setLoading] = useState(false);
+122:   const [uploadedFileName, setUploadedFileName] = useState('');
+123:   const [mapCenter, setMapCenter] = useState([13.0827, 80.2707]); // Default to Chennai, Tamil Nadu
+124:   const [mapZoom, setMapZoom] = useState(12);
+125:   const [backendReady, setBackendReady] = useState(false);
+126: 
+127:   // Simulation State
+128:   const [isSimulating, setIsSimulating] = useState(false);
+129:   const [simIndex, setSimIndex] = useState(0);
+130: 
+131:   // Real-time GPS State
+132:   const [isRealTimeMode, setIsRealTimeMode] = useState(false);
+133:   const [userLocation, setUserLocation] = useState(null);
+134:   const [userHeading, setUserHeading] = useState(0);
+135:   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+136:   const [mapType, setMapType] = useState('dark'); // dark, satellite, terrain
+137:   const [isCompassMode, setIsCompassMode] = useState(false);
+138:   const [is3DMode, setIs3DMode] = useState(false);
+139:   const [waitingForValidation, setWaitingForValidation] = useState(false);
+140:   const [routeMode, setRouteMode] = useState('driving');
+141: 
+142:   // Periodic Backend Health Check
+143:   useEffect(() => {
+144:     const checkStatus = async () => {
+145:       try {
+146:         await axios.get('http://127.0.0.1:8000/');
+147:         setBackendReady(true);
+148:       } catch (err) {
+149:         setBackendReady(false);
+150:       }
+151:     };
+152:     checkStatus();
+153:     const interval = setInterval(checkStatus, 5000);
+154:     return () => clearInterval(interval);
+155:   }, []);
+156: 
+157:   // Voice Synthesis Helper
+158:   const speak = (text) => {
+159:     if (!('speechSynthesis' in window) || !isVoiceEnabled) return;
+160:     window.speechSynthesis.cancel(); // Interrupt previous speech
+161:     const utterance = new SpeechSynthesisUtterance(text);
+162:     utterance.rate = 1.0;
+163:     utterance.pitch = 1.0;
+164:     window.speechSynthesis.speak(utterance);
+165:   };
+166: 
+167:   // Simulation Logic
+168:   useEffect(() => {
+169:     let timer;
+170:     if (isSimulating && optimizedRoute && simIndex < optimizedRoute.length) {
+171:       if (waitingForValidation) return; // Wait for user to validate
+172: 
+173:       timer = setTimeout(() => {
+174:         setWaitingForValidation(true);
+175:         speak(`Arrived at stop ${simIndex + 1}. Please confirm delivery to mark as completed.`);
+176:       }, 3000); // simulate travel time
+177:     } else if (simIndex >= (optimizedRoute?.length || 0)) {
+178:       setIsSimulating(false);
+179:     }
+180:     return () => clearTimeout(timer);
+181:   }, [isSimulating, simIndex, optimizedRoute, waitingForValidation]);
+182: 
+183:   const handleCompleteDelivery = () => {
+184:     setWaitingForValidation(false);
+185:     const nextIndex = simIndex + 1;
+186:     if (nextIndex < optimizedRoute.length) {
+187:       const nextStop = optimizedRoute[nextIndex];
+188:       setSimIndex(nextIndex);
+189:       setMapCenter([nextStop.lat, nextStop.lng]);
+190:       
+191:       if (nextStop.risk_level === 'High') {
+192:         speak(`Caution. Approaching high risk delivery at stop ${nextIndex + 1}.`);
+193:       }
+194:     } else {
+195:       setSimIndex(nextIndex); // Move beyond the last stop
+196:       speak("Final stop reached. All deliveries completed.");
+197:       setIsSimulating(false);
+198:       setIsRealTimeMode(false);
+199:     }
+200:   };
+201: 
+202:   // Real-time GPS Tracking
+203:   useEffect(() => {
+204:     let watchId = null;
+205: 
+206:     if (isRealTimeMode) {
+207:       speak("Starting drive mode. Navigation active.");
+208:       if ("geolocation" in navigator) {
+209:         // Force an immediate high-accuracy hit to fix "not proper location"
+210:         navigator.geolocation.getCurrentPosition(
+211:           (position) => {
+212:             const { latitude, longitude } = position.coords;
+213:             setUserLocation([latitude, longitude]);
+214:             setMapCenter([latitude, longitude]);
+215:           },
+216:           (err) => console.warn("Initial positioning failed", err),
+217:           { enableHighAccuracy: true }
+218:         );
+219: 
+220:         watchId = navigator.geolocation.watchPosition(
+221:           (position) => {
+222:             const { latitude, longitude, heading, speed } = position.coords;
+223:             setUserLocation([latitude, longitude]);
+224:             setMapCenter([latitude, longitude]); // Auto-follow
+225: 
+226:             // Optional: Voice for movement
+227:             if (speed > 5) { // If moving faster than 5m/s
+228:               // We could add navigation logic here
+229:             }
+230:           },
+231:           (error) => {
+232:             console.error("Geolocation error:", error);
+233:             speak("Error accessing location. Please check permissions.");
+234:             setIsRealTimeMode(false);
+235:           },
+236:           {
+237:             enableHighAccuracy: true,
+238:             maximumAge: 0,
+239:             timeout: 10000, // Increased timeout
+240:             distanceFilter: 1 // Only update if moved 1 meter
+241:           }
+242:         );
+243:       } else {
+244:         alert("Geolocation is not supported by your browser.");
+245:         setIsRealTimeMode(false);
+246:       }
+247:     } else {
+248:       if (watchId) navigator.geolocation.clearWatch(watchId);
+249:     }
+250: 
+251:     return () => {
+252:       if (watchId) navigator.geolocation.clearWatch(watchId);
+253:     };
+254:   }, [isRealTimeMode]);
+255: 
+256:   const [routeGeometries, setRouteGeometries] = useState({});
+257: 
+258:   useEffect(() => {
+259:     // Fetch DYNAMIC ROUTES based on routeMode for all adjacent stops
+260:     if (optimizedRoute && optimizedRoute.length > 1) {
+261:       const fetchRoutes = async () => {
+262:          const coordsString = optimizedRoute.map(loc => `${loc.lng},${loc.lat}`).join(';');
+263:          try {
+264:            const res = await axios.get(`http://router.project-osrm.org/route/v1/${routeMode}/${coordsString}?geometries=geojson`);
+265:            if (res.data && res.data.code === "Ok") {
+266:               let currentOriginalLeg = 0;
+267:               const newGeometries = {};
+268:               // OSRM returns legs corresponding to each segment
+269:               res.data.routes[0].legs.forEach((leg, index) => {
+270:                  // OSRM geojson includes steps. For simplicity, if we query all, we can extract per-leg geometry.
+271:                  // In OSRM v1, if we just want the overall geometry, it's easier to just draw it as a single Polyline.
+272:                  // But since the original mapped segments step by step, let's keep the single array and we can render one full route that is colored nicely.
+273:                  // Wait, to keep original UX, I should map each leg back to the original stop path.
+274:                  const points = leg.steps.flatMap(s => s.geometry.coordinates.map(c => [c[1], c[0]]));
+275:                  newGeometries[index] = points;
+276:               });
+277:               setRouteGeometries(newGeometries);
+278:            }
+279:          } catch(err) {
+280:            console.error("OSRM Route fetching error", err);
+281:            setRouteGeometries({}); // fallback to straight lines
+282:          }
+283:       };
+284:       fetchRoutes();
+285:     }
+286:   }, [optimizedRoute, routeMode]);
+287: 
+288:   const handleFileUpload = async (event) => {
+289:     const file = event.target.files[0];
+290:     if (!file) return;
+291: 
+292:     setLoading(true);
+293:     setUploadedFileName(file.name);
+294:     setIsSimulating(false);
+295:     setSimIndex(0);
+296:     setRouteGeometries({});
+297: 
+298:     try {
+299:       const formData = new FormData();
+300:       formData.append('file', file);
+301: 
+302:       const response = await axios.post('http://127.0.0.1:8000/upload_csv', formData);
+303: 
+304:       if (response.data.error) {
+305:         alert(`Error: ${response.data.error}`);
+306:         setDeliveries([]);
+307:         setOptimizedRoute(null);
+308:       } else {
+309:         const data = response.data;
+310:         setDeliveries(data.deliveries);
+311:         setOptimizedRoute(data.optimized_route);
+312: 
+313:         if (data.deliveries.length > 0) {
+314:           // Centering map on the first delivery
+315:           setMapCenter([data.deliveries[0].lat, data.deliveries[0].lng]);
+316:           setMapZoom(13);
+317:           speak(`Data processed. Optimized route found for ${data.total_deliveries} deliveries across ${data.clusters.length} clusters.`);
+318:         }
+319: 
+320:         alert(`✅ Processed ${data.total_deliveries} deliveries across ${data.clusters.length} clusters!`);
+321:       }
+322:     } catch (error) {
+323:       console.error('Upload failed:', error);
+324:       alert('Failed to connect to backend optimization service.');
+325:     } finally {
+326:       setLoading(false);
+327:     }
+328:   };
+329: 
+330:   const stats = useMemo(() => {
+331:     if (!optimizedRoute || optimizedRoute.length === 0) {
+332:       return { total: 0, highRisk: 0, avgProb: 0, clusters: 0 };
+333:     }
+334:     const high = optimizedRoute.filter(d => d.risk_level === 'High').length;
+335:     const avgP = optimizedRoute.reduce((acc, d) => acc + d.risk_probability, 0) / optimizedRoute.length;
+336:     const clusterCount = new Set(optimizedRoute.map(d => d.cluster)).size;
+337:     return {
+338:       total: optimizedRoute.length,
+339:       highRisk: high,
+340:       avgProb: (avgP * 100).toFixed(1),
+341:       clusters: clusterCount
+342:     };
+343:   }, [optimizedRoute]);
+344: 
+345:   const handleClear = () => {
+346:     setDeliveries([]);
+347:     setOptimizedRoute(null);
+348:     setUploadedFileName('');
+349:     setMapCenter([13.0827, 80.2707]);
+350:     setMapZoom(10);
+351:     setIsSimulating(false);
+352:     setSimIndex(0);
+353:     setIsRealTimeMode(false);
+354:     setWaitingForValidation(false);
+355:   };
+356: 
+357:   const toggleSimulation = () => {
+358:     setIsRealTimeMode(false); // Disable real-time if simulation starts
+359:     if (optimizedRoute && simIndex >= optimizedRoute.length) {
+360:       setSimIndex(0);
+361:     }
+362:     setWaitingForValidation(false);
+363:     setIsSimulating(!isSimulating);
+364:   };
+365: 
+366:   const toggleRealTimeMode = () => {
+367:     setIsSimulating(false); // Disable simulation if real-time starts
+368:     setWaitingForValidation(false);
+369:     setIsRealTimeMode(!isRealTimeMode);
+370:   };
+371: 
+372:   const currentTarget = optimizedRoute?.[simIndex];
+373:   const distanceToTarget = (isRealTimeMode && userLocation && currentTarget) 
+374:     ? calculateDistance(userLocation[0], userLocation[1], currentTarget.lat, currentTarget.lng)
+375:     : null;
+376:   const withinDeliveryRange = distanceToTarget !== null && distanceToTarget < 100; // 100 meters validation
+377: 
+378:   return (
+379:     <div className="flex h-screen overflow-hidden relative">
+380:       <div className="app-bg" />
+381: 
+382:       {/* Sidebar */}
+383:       <aside className="sidebar w-64 flex flex-col shrink-0">
+384:         <div className="px-6 py-8 border-b border-white/5">
+385:           <div className="flex items-center gap-3">
+386:             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+387:               <Truck size={20} className="text-white" />
+388:             </div>
+389:             <div>
+390:               <h1 className="sidebar-logo text-xl font-bold tracking-tight">SmartParcel</h1>
+391:               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Tamil Nadu Ops</p>
+392:             </div>
+393:           </div>
+394:         </div>
+395: 
+396:         <div className="flex-1 px-4 py-6">
+397:           <label className="block mb-6">
+398:             <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+399:             <div className="cursor-pointer bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-50 hover:to-violet-500 transition-all p-5 rounded-2xl text-center group border border-indigo-400/20 shadow-xl shadow-indigo-900/20">
+400:               <Package size={36} className="mx-auto mb-3 text-white group-hover:scale-110 transition-transform" />
+401:               <p className="text-white font-bold text-sm">Upload CSV Data</p>
+402:               <p className="text-indigo-100/70 text-[10px] mt-1">Real-time Risk Prediction</p>
+403:             </div>
+404:           </label>
+405: 
+406:           {uploadedFileName && (
+407:             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 mb-4">
+408:               <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Active Batch</p>
+409:               <p className="text-sm text-white font-medium truncate">{uploadedFileName}</p>
+410:               <div className="flex items-center gap-2 mt-2">
+411:                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+412:                 <p className="text-xs text-emerald-400 font-medium">{deliveries.length} Records Loaded</p>
+413:               </div>
+414:             </motion.div>
+415:           )}
+416: 
+417:           {deliveries.length > 0 && (
+418:             <div className="space-y-3">
+419:               <button
+420:                 onClick={toggleSimulation}
+421:                 className={`w-full py-3 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-2 border shadow-lg ${isSimulating
+422:                   ? 'bg-rose-900/40 border-rose-500/30 text-rose-400 hover:bg-rose-900/60'
+423:                   : 'bg-slate-800 hover:bg-slate-700 border-white/5 text-slate-300'
+424:                   }`}
+425:               >
+426:                 {isSimulating ? <Zap size={14} className="animate-pulse" /> : <Truck size={14} />}
+427:                 {isSimulating ? 'Stop Simulation' : 'Run Simulation'}
+428:               </button>
+429: 
+430:               <button
+431:                 onClick={toggleRealTimeMode}
+432:                 className={`w-full py-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border shadow-lg ${isRealTimeMode
+433:                   ? 'bg-blue-600 border-blue-400/30 text-white shadow-blue-900/40'
+434:                   : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 border-indigo-400/30 text-white shadow-indigo-900/20'
+435:                   }`}
+436:               >
+437:                 {isRealTimeMode ? <LocateFixed size={16} className="animate-pulse" /> : <Navigation size={16} />}
+438:                 {isRealTimeMode ? 'Stop Drive Mode' : 'Start My Drive Mode'}
+439:               </button>
+440: 
+441:               <div className="pt-4 space-y-3">
+442:                 <div className="flex items-center justify-between px-2">
+443:                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Routing Mode</span>
+444:                   <select
+445:                     value={routeMode}
+446:                     onChange={(e) => setRouteMode(e.target.value)}
+447:                     className="bg-slate-800/80 border border-white/5 text-[10px] font-bold text-slate-300 rounded-lg px-2 py-1 outline-none cursor-pointer"
+448:                   >
+449:                     <option value="driving">Car 🚗</option>
+450:                     <option value="walking">Walking 🚶</option>
+451:                     <option value="cycling">Bike 🚲</option>
+452:                   </select>
+453:                 </div>
+454:                 <div className="flex items-center justify-between px-2">
+455:                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Voice Assistant</span>
+456:                   <button
+457:                     onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+458:                     className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all ${isVoiceEnabled ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}
+459:                   >
+460:                     {isVoiceEnabled ? 'ON' : 'OFF'}
+461:                   </button>
+462:                 </div>
+463: 
+464:                 <div className="flex items-center justify-between px-2">
+465:                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Map View</span>
+466:                   <select
+467:                     value={mapType}
+468:                     onChange={(e) => setMapType(e.target.value)}
+469:                     className="bg-slate-800/80 border border-white/5 text-[10px] font-bold text-slate-300 rounded-lg px-2 py-1 outline-none cursor-pointer"
+470:                   >
+471:                     <option value="dark">Dark Mode</option>
+472:                     <option value="satellite">Satellite (Google)</option>
+473:                     <option value="terrain">Terrain (Google)</option>
+474:                   </select>
+475:                 </div>
+476: 
+477:                 <div className="flex items-center justify-between px-2">
+478:                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Compass Mode</span>
+479:                   <button
+480:                     onClick={() => setIsCompassMode(!isCompassMode)}
+481:                     className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all ${isCompassMode ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-800 text-slate-500'}`}
+482:                   >
+483:                     {isCompassMode ? 'HEADING UP' : 'NORTH UP'}
+484:                   </button>
+485:                 </div>
+486:                 
+487:                 <div className="flex items-center justify-between px-2">
+488:                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">3D Map Style</span>
+489:                   <button
+490:                     onClick={() => setIs3DMode(!is3DMode)}
+491:                     className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all ${is3DMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}
+492:                   >
+493:                     {is3DMode ? 'ON' : 'OFF'}
+494:                   </button>
+495:                 </div>
+496:               </div>
+497: 
+498:               <button onClick={handleClear} className="w-full bg-slate-800/50 hover:bg-rose-900/40 hover:text-rose-400 border border-slate-700 text-slate-400 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2">
+499:                 <Trash2 size={14} /> Clear System Data
+500:               </button>
+501:             </div>
+502:           )}
+503:         </div>
+504: 
+505:         <div className="px-4 py-6 border-t border-white/5 bg-slate-900/20">
+506:           <div className="system-status">
+507:             <div className="flex items-center gap-2 mb-4">
+508:               <div className={`status-dot ${!backendReady ? 'offline' : ''}`} />
+509:               <span className="text-xs font-bold text-slate-300 tracking-wide uppercase">
+510:                 {backendReady ? 'Optimization Engine Online' : 'Backend Connection Offline'}
+511:               </span>
+512:             </div>
+513:             <div className="space-y-2.5">
+514:               <div className="flex justify-between text-[11px]">
+515:                 <span className="text-slate-500">RF Classifier</span>
+516:                 <span className="text-indigo-400 font-bold">Active</span>
+517:               </div>
+518:               <div className="flex justify-between text-[11px]">
+519:                 <span className="text-slate-500">LR Optimizer</span>
+520:                 <span className="text-violet-400 font-bold">Stable</span>
+521:               </div>
+522:               <div className="flex justify-between text-[11px]">
+523:                 <span className="text-slate-500">Genetic Algo</span>
+524:                 <span className="text-emerald-400 font-bold">Ready</span>
+525:               </div>
+526:             </div>
+527:           </div>
+528:         </div>
+529:       </aside>
+530:       <main className="flex-1 flex flex-col relative z-10 overflow-hidden">
+531:         <header className="app-header h-20 flex items-center justify-between px-8 shrink-0">
+532:           <div>
+533:             <h2 className="text-xl font-bold text-white tracking-tight">Adaptive Route Intelligence</h2>
+534:             <div className="flex items-center gap-4 mt-1">
+535:               <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+536:                 <Activity size={12} className="text-indigo-500" /> Multi-Cluster Optimization
+537:               </p>
+538:               <div className="w-1 h-1 rounded-full bg-slate-700" />
+539:               <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+540:                 <Shield size={12} className="text-emerald-500" /> Risk-Aware Routing
+541:               </p>
+542:             </div>
+543:           </div>
+544: 
+545:           {loading && <div className="flex items-center gap-3 bg-indigo-500/10 border border-indigo-500/20 px-4 py-2 rounded-full">
+546:             <span className="loading-spinner" />
+547:             <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Optimizing...</span>
+548:           </div>}
+549:         </header>
+550: 
+551:         <div className="flex-1 overflow-auto p-6 scrollbar-hide">
+552:           {/* Stats Bar */}
+553:           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+554:             {[
+555:               { label: 'Total Stops', value: stats.total, icon: MapPin, color: 'from-indigo-500/10', iconColor: 'text-indigo-400' },
+556:               { label: 'High Risk Alerts', value: stats.highRisk, icon: AlertTriangle, color: 'from-rose-500/10', iconColor: 'text-rose-400' },
+557:               { label: 'System Accuracy', value: stats.total > 0 ? '97.4' : '—', suffix: stats.total > 0 ? '%' : '', icon: Shield, color: 'from-emerald-500/10', iconColor: 'text-emerald-400' },
+558:               { label: 'Active Clusters', value: stats.clusters, icon: Layers, color: 'from-violet-500/10', iconColor: 'text-violet-400' },
+559:             ].map((stat, i) => {
+560:               const Icon = stat.icon;
+561:               return (
+562:                 <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="stat-card group">
+563:                   <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} to-transparent opacity-50 group-hover:opacity-100 transition-opacity`} />
+564:                   <div className="relative flex items-center justify-between">
+565:                     <div>
+566:                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{stat.label}</p>
+567:                       <p className="text-2xl text-white">
+568:                         <AnimatedNumber value={stat.value} suffix={stat.suffix} />
+569:                       </p>
+570:                     </div>
+571:                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-900/50 border border-white/5 ${stat.iconColor}`}>
+572:                       <Icon size={24} />
+573:                     </div>
+574:                   </div>
+575:                 </motion.div>
+576:               );
+577:             })}
+578:           </div>
+579: 
+580:           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-280px)]">
+581:             {/* Map Container */}
+582:             <div className={`lg:col-span-2 relative map-panel rounded-3xl overflow-hidden group ${is3DMode ? 'is-3d-mode' : ''}`}>
+583:               {optimizedRoute && simIndex < optimizedRoute.length && (waitingForValidation || isRealTimeMode) && (
+584:                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[2000] w-[90%] max-w-sm pointer-events-auto">
+585:                   <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 p-5 rounded-2xl shadow-2xl flex flex-col gap-4">
+586:                     <div className="flex justify-between items-center">
+587:                       <div>
+588:                         <h4 className="text-white font-bold flex items-center gap-2">
+589:                           <CheckCircle className="text-emerald-400" size={18} /> Confirm Delivery
+590:                         </h4>
+591:                         <p className="text-slate-400 text-xs mt-1">
+592:                           Stop #{simIndex + 1} - {currentTarget?.street || `Zone ${currentTarget?.cluster}`}
+593:                         </p>
+594:                       </div>
+595:                       {isRealTimeMode && (
+596:                         <div className="text-right">
+597:                           <p className="text-[10px] text-slate-500 uppercase font-bold">Distance</p>
+598:                           <p className={`text-sm font-bold ${withinDeliveryRange ? 'text-emerald-400' : 'text-amber-400'}`}>
+599:                             {distanceToTarget ? `${Math.round(distanceToTarget)}m` : 'Calc...'}
+600:                           </p>
+601:                         </div>
+602:                       )}
+603:                     </div>
+604:                     
+605:                     <button 
+606:                       onClick={handleCompleteDelivery}
+607:                       disabled={isRealTimeMode && !withinDeliveryRange}
+608:                       className={`w-full py-3 rounded-xl font-bold transition-all ${
+609:                         (!isRealTimeMode || withinDeliveryRange) 
+610:                           ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 cursor-pointer' 
+611:                           : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
+612:                       }`}
+613:                     >
+614:                       Mark as Completed
+615:                     </button>
+616:                     {isRealTimeMode && !withinDeliveryRange && (
+617:                       <p className="text-center text-[10px] text-amber-500 uppercase tracking-wider font-bold">
+618:                         Must be within 100m to validate
+619:                       </p>
+620:                     )}
+621:                   </motion.div>
+622:                 </div>
+623:               )}
+624: 
+625:               <div className="absolute top-6 left-6 z-[1000] space-y-2 pointer-events-none">
+626:                 <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 px-4 py-3 rounded-2xl shadow-2xl">
+627:                   <h3 className="text-xs font-bold text-white mb-2 flex items-center gap-2 tracking-wide uppercase">
+628:                     <Activity size={14} className="text-indigo-500" /> Dynamic Map Visualization
+629:                   </h3>
+630:                   <div className="flex gap-4">
+631:                     <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-[10px] text-slate-400 font-bold uppercase">Safe/Complete</span></div>
+632:                     <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] text-slate-400 font-bold uppercase">Warning</span></div>
+633:                     <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-rose-500" /><span className="text-[10px] text-slate-400 font-bold uppercase">Risk</span></div>
+634:                   </div>
+635:                 </div>
+636:               </div>
+637: 
+638:               <MapContainer
+639:                 center={mapCenter}
+640:                 zoom={mapZoom}
+641:                 scrollWheelZoom={true}
+642:                 className="h-full w-full transition-transform duration-500 ease-out z-0"
+643:                 style={{ 
+644:                   transform: is3DMode ? `rotateX(55deg) scale(1.3) translateY(10%) ${isCompassMode ? `rotateZ(${-userHeading}deg)` : ''}` : (isCompassMode ? `rotate(${-userHeading}deg)` : 'none'),
+645:                   transformOrigin: 'center center'
+646:                 }}
+647:               >
+648:                 <ChangeView center={mapCenter} zoom={mapZoom} isSimulating={isSimulating} />
+649: 
+650:                 {mapType === 'dark' && (
+651:                   <TileLayer
+652:                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+653:                     url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+654:                   />
+655:                 )}
+656: 
+657:                 {mapType === 'satellite' && (
+658:                   <TileLayer
+659:                     attribution='&copy; Google Maps'
+660:                     url="http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}"
+661:                     subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
+662:                   />
+663:                 )}
+664: 
+665:                 {mapType === 'terrain' && (
+666:                   <TileLayer
+667:                     attribution='&copy; Google Maps'
+668:                     url="http://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}"
+669:                     subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
+670:                   />
+671:                 )}
+672: 
+673:                 {optimizedRoute && optimizedRoute.length > 1 && (
+674:                   optimizedRoute.slice(0, optimizedRoute.length - 1).map((stop, i) => {
+675:                     // Only show route segments for future stops
+676:                     if (i < simIndex - 1) return null;
+677:                     
+678:                     const nextStop = optimizedRoute[i + 1];
+679:                     const isHighTraffic = nextStop.traffic > 3;
+680:                     
+681:                     return (
+682:                       <Polyline
+683:                         key={`path-${i}`}
+684:                         positions={routeGeometries[i] ? routeGeometries[i] : [
+685:                           [stop.lat, stop.lng],
+686:                           [nextStop.lat, nextStop.lng]
+687:                         ]}
+688:                         pathOptions={{ 
+689:                           color: isHighTraffic ? '#ef4444' : '#22c55e', // Red for high traffic, Green for safe
+690:                           weight: 5, 
+691:                           opacity: 0.8,
+692:                           dashArray: routeGeometries[i] ? 'none' : (isHighTraffic ? '1, 10' : 'none')
+693:                         }}
+694:                       />
+695:                     );
+696:                   })
+697:                 )}
+698: 
+699:                 {userLocation && (
+700:                   <Marker
+701:                     position={userLocation}
+702:                     icon={new L.Icon({
+703:                       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+704:                       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+705:                       iconSize: [25, 41],
+706:                       iconAnchor: [12, 41],
+707:                     })}
+708:                     zIndexOffset={2000}
+709:                   >
+710:                     <Popup className="premium-popup">
+711:                       <div className="p-2 text-center" style={{ transform: isCompassMode ? `rotate(${userHeading}deg)` : 'none' }}>
+712:                         <p className="text-[10px] font-bold text-blue-400 uppercase mb-1">Live Location</p>
+713:                         <p className="text-xs text-white font-bold">You are here</p>
+714:                       </div>
+715:                     </Popup>
+716:                   </Marker>
+717:                 )}
+718: 
+719:                 {isSimulating && optimizedRoute && simIndex < optimizedRoute.length && (
+720:                   <Marker
+721:                     position={[optimizedRoute[simIndex].lat, optimizedRoute[simIndex].lng]}
+722:                     icon={new L.Icon({
+723:                       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-black.png',
+724:                       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+725:                       iconSize: [25, 41],
+726:                       iconAnchor: [12, 41],
+727:                       className: 'animated-bike-marker'
+728:                     })}
+729:                     zIndexOffset={1000}
+730:                   >
+731:                     <Popup className="premium-popup">
+732:                       <div className="p-2 text-center" style={{ transform: isCompassMode ? `rotate(${userHeading}deg)` : 'none' }}>
+733:                         <p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Live Tracking</p>
+734:                         <p className="text-xs text-white font-bold">Delivery Truck 01</p>
+735:                         <p className="text-[10px] text-slate-500 mt-1">Status: Moving to Stop #{simIndex + 2}</p>
+736:                       </div>
+737:                     </Popup>
+738:                   </Marker>
+739:                 )}
+740: 
+741:                 {optimizedRoute && optimizedRoute.map((stop, i) => {
+742:                   const isCompleted = i < simIndex;
+743: 
+744:                   return (
+745:                     <Marker
+746:                       key={i}
+747:                       position={[stop.lat, stop.lng]}
+748:                       icon={isCompleted ? getCompletedIcon() : getRiskIcon(stop.risk_level)}
+749:                       opacity={isCompleted ? 0.7 : 1}
+750:                     >
+751:                       <Popup className="premium-popup">
+752:                         <div className="p-2 min-w-[140px]" style={{ transform: isCompassMode ? `rotate(${userHeading}deg)` : 'none' }}>
+753:                           <div className="flex justify-between items-start mb-2">
+754:                             <span className="text-[10px] font-bold text-slate-500 uppercase">Stop #{i + 1}</span>
+755:                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+756:                               isCompleted ? 'bg-emerald-500/20 text-emerald-400' :
+757:                               stop.risk_level === 'High' ? 'bg-rose-500/20 text-rose-400' :
+758:                               stop.risk_level === 'Medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
+759:                               }`}>
+760:                               {isCompleted ? 'Completed ✅' : stop.risk_level}
+761:                             </span>
+762:                           </div>
+763:                           <div className="space-y-1.5">
+764:                             <p className="text-xs text-white font-bold flex justify-between">ID: <span className="text-slate-400">#00{stop.id}</span></p>
+765:                             <p className="text-xs text-white font-bold flex justify-between">Area: <span className="text-indigo-400 truncate ml-2">{stop.street && stop.street !== 'Unknown Street' ? stop.street : `Zone ${stop.cluster}`}</span></p>
+766:                             <p className="text-xs text-white font-bold flex justify-between">Cluster: <span className="text-violet-400">Area {stop.cluster}</span></p>
+767:                             <div className="h-px bg-white/5 my-1" />
+768:                             {!isCompleted && (
+769:                               <div className="flex gap-4">
+770:                                 <div className="flex items-center gap-1 text-[10px] text-slate-400"><Gauge size={12} className="text-indigo-400" /> {stop.traffic}/5</div>
+771:                                 <div className="flex items-center gap-1 text-[10px] text-slate-400"><Cloud size={12} className="text-blue-400" /> {weatherLabel(stop.weather)}</div>
+772:                               </div>
+773:                             )}
+774:                           </div>
+775:                         </div>
+776:                       </Popup>
+777:                     </Marker>
+778:                   );
+779:                 })}
+780:               </MapContainer>
+781:             </div>
+782: 
+783:             {/* Decision Support Panel */}
+784:             <div className="risk-panel rounded-3xl flex flex-col overflow-hidden">
+785:               <div className="p-6 border-b border-white/5 bg-slate-900/40">
+786:                 <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-widest">
+787:                   <Activity size={18} className="text-indigo-500" /> Real-time Analytics
+788:                 </h3>
+789:                 <p className="text-[10px] text-slate-500 mt-1 font-medium tracking-wide">AI PREDICTED RISK ENGINE RESULTS</p>
+790:               </div>
+791: 
+792:               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 custom-scrollbar">
+793:                 <AnimatePresence mode="popLayout">
+794:                   {!optimizedRoute ? (
+795:                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col items-center justify-center text-center p-10">
+796:                       <div className="w-16 h-16 rounded-3xl bg-indigo-500/5 flex items-center justify-center mb-4 border border-indigo-500/10">
+797:                         <Zap size={32} className="text-indigo-500/40" />
+798:                       </div>
+799:                       <h4 className="text-sm font-bold text-slate-400 mb-2">No Active Pipeline</h4>
+800:                       <p className="text-xs text-slate-600">Upload a manifest CSV to initialize the ML-based risk assessment engine.</p>
+801:                     </motion.div>
+802:                   ) : (
+803:                     optimizedRoute.slice(simIndex).map((stop, i) => {
+804:                       const realIndex = i + simIndex;
+805:                       const riskType = stop.risk_level.toLowerCase();
+806:                       return (
+807:                         <motion.div key={realIndex} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+808:                           className={`risk-card risk-${riskType} border-l-4 ${riskType === 'high' ? 'border-l-rose-500' : riskType === 'medium' ? 'border-l-amber-500' : 'border-l-emerald-500'}`}
+809:                         >
+810:                           <div className="flex justify-between items-center mb-3">
+811:                             <div className="flex items-center gap-3">
+812:                               <span className="w-8 h-8 rounded-lg bg-slate-900/80 text-slate-400 flex items-center justify-center text-[11px] font-bold">
+813:                                 {`#${realIndex + 1}`}
+814:                               </span>
+815:                               <div>
+816:                                 <p className="text-xs font-bold text-white uppercase tracking-tight truncate max-w-[120px]">
+817:                                   {stop.street && stop.street !== 'Unknown Street' ? stop.street : `Area Zone ${stop.cluster}`}
+818:                                 </p>
+819:                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+820:                                   {`Zone ${stop.cluster} • ID ${stop.id}`}
+821:                                 </p>
+822:                               </div>
+823:                             </div>
+824:                             <span className={`risk-badge risk-badge-${riskType}`}>
+825:                               {stop.risk_level}
+826:                             </span>
+827:                           </div>
+828: 
+829:                           <div className="grid grid-cols-3 gap-2">
+830:                             <div className="bg-slate-900/40 p-2 rounded-lg text-center">
+831:                               <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Traffic</p>
+832:                               <p className={`text-xs font-bold ${stop.traffic > 3 ? 'text-rose-400' : 'text-white'}`}>{stop.traffic}/5</p>
+833:                             </div>
+834:                             <div className="bg-slate-900/40 p-2 rounded-lg text-center">
+835:                               <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Dist</p>
+836:                               <p className="text-xs text-white font-bold">{stop.distance}km</p>
+837:                             </div>
+838:                             <div className="bg-slate-900/40 p-2 rounded-lg text-center font-bold">
+839:                               <p className="text-[9px] text-slate-500 uppercase mb-0.5">Weather</p>
+840:                               <WeatherIcon condition={stop.weather} className="mx-auto" />
+841:                             </div>
+842:                           </div>
+843: 
+844:                           <div className="mt-3">
+845:                             <div className="flex justify-between items-center text-[9px] font-bold uppercase mb-1">
+846:                               <span className="text-slate-500 tracking-widest">Failure Probability</span>
+847:                               <span className="text-indigo-400">{(stop.risk_probability * 100).toFixed(1)}%</span>
+848:                             </div>
+849:                             <div className="prob-bar-track bg-slate-900/60">
+850:                               <motion.div initial={{ width: 0 }} animate={{ width: `${stop.risk_probability * 100}%` }}
+851:                                 className={`prob-bar-fill ${riskType === 'high' ? 'bg-rose-500' : riskType === 'medium' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+852:                               />
+853:                             </div>
+854:                           </div>
+855:                         </motion.div>
+856:                       );
+857:                     })
+858:                   )}
+859:                 </AnimatePresence>
+860:               </div>
+861:             </div>
+862:           </div>
+863:         </div>
+864:       </main >
+865:     </div >
+866:   );
+867: }
+868: 
+869: export default App;

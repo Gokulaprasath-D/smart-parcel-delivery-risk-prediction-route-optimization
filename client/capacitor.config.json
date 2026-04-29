@@ -1,0 +1,8 @@
+{
+  "appId": "com.smartparcel.app",
+  "appName": "SmartParcel",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true
+  }
+}
