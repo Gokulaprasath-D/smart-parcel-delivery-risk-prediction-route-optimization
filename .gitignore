@@ -1,9 +1,25 @@
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual env
 venv/
 .venv/
-__pycache__/
-dist/
-build/
+
+# Env files
 .env
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# IDE
 .vscode/
 .idea/
+
+# Node
+node_modules/
